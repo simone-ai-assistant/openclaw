@@ -42,16 +42,61 @@ jobs:
 
     - name: Sync Other Branches
       run: |
-        # Get all upstream branches
-        for branch in $(git branch -r | grep upstream/ | grep -v HEAD | sed 's/upstream\///'); do
+        # Get all upstream branches (limit to first 10 to avoid timeout)
+        branches=$(git branch -r | grep upstream/ | grep -v HEAD | sed 's/upstream\///' | head -10)
+        failed_branches=""
+
+        for branch in $branches; do
+          echo ""
+          echo "=== Processing branch: $branch ==="
+
+          # Always return to main before processing next branch
+          git checkout main || true
+
           if git show-ref --verify --quiet refs/heads/$branch; then
-            echo "Syncing branch: $branch"
-            git checkout $branch
-            git merge upstream/$branch --no-edit || true
-            git push origin $branch
+            echo "Branch exists locally, syncing..."
+            if git checkout $branch; then
+              if git merge upstream/$branch --no-edit; then
+                if git push origin $branch; then
+                  echo "✓ Successfully synced: $branch"
+                else
+                  echo "✗ Push failed for: $branch"
+                  failed_branches="$failed_branches $branch(push)"
+                fi
+              else
+                echo "✗ Merge failed for: $branch"
+                failed_branches="$failed_branches $branch(merge)"
+              fi
+            else
+              echo "✗ Checkout failed for: $branch"
+              failed_branches="$failed_branches $branch(checkout)"
+            fi
           else
             echo "Creating new branch: $branch"
-            git checkout -b $branch upstream/$branch
-            git push origin $branch
+            if git checkout -b $branch upstream/$branch; then
+              if git push origin $branch; then
+                echo "✓ Successfully created: $branch"
+              else
+                echo "✗ Push failed for new branch: $branch"
+                failed_branches="$failed_branches $branch(push-new)"
+              fi
+            else
+              echo "✗ Checkout failed for new branch: $branch"
+              failed_branches="$failed_branches $branch(checkout-new)"
+            fi
           fi
         done
+
+        # Return to main
+        git checkout main || true
+
+        # Report results
+        echo ""
+        echo "=== Sync Summary ==="
+        if [ -z "$failed_branches" ]; then
+          echo "✓ All branches synced successfully!"
+        else
+          echo "⚠ Some branches failed:$failed_branches"
+          echo "Main branch was synced successfully."
+        fi
+      continue-on-error: true
