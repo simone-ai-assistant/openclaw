@@ -1,0 +1,76 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (do not push)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use PAT with repo scope, or fallback to GITHUB_TOKEN
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "Simone Bot"
+          git config user.email "sim0ne.idle@gmail.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/openclaw/openclaw.git
+          git fetch upstream --no-tags --prune
+
+      - name: Check if sync is needed
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/main)
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+          echo "upstream=$UPSTREAM" >> $GITHUB_OUTPUT
+          if [ "$LOCAL" = "$UPSTREAM" ]; then
+            echo "sync_needed=false" >> $GITHUB_OUTPUT
+            echo "Already up to date with upstream"
+          else
+            echo "sync_needed=true" >> $GITHUB_OUTPUT
+            echo "Commits to sync:"
+            git log --oneline HEAD..upstream/main
+          fi
+
+      - name: Sync main branch
+        if: steps.check.outputs.sync_needed == 'true'
+        run: |
+          git checkout main
+          # Try merge first, if it fails, try rebase
+          if ! git merge upstream/main --no-edit; then
+            echo "Merge failed, attempting rebase..."
+            git merge --abort 2>/dev/null || true
+            git rebase upstream/main
+          fi
+
+      - name: Push changes
+        if: steps.check.outputs.sync_needed == 'true' && !inputs.dry_run
+        run: |
+          # The checkout action should have configured credentials
+          git push origin main
+
+      - name: Dry run output
+        if: steps.check.outputs.sync_needed == 'true' && inputs.dry_run
+        run: |
+          echo "Dry run mode - would have pushed these commits:"
+          git log --oneline upstream/main..HEAD || true
