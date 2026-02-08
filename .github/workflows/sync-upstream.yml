@@ -18,9 +18,6 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      workflows: write
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
