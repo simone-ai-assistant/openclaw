@@ -14,11 +14,13 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      workflows: write
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
@@ -43,14 +45,14 @@ jobs:
           LOCAL=$(git rev-parse HEAD)
           UPSTREAM=$(git rev-parse upstream/main)
           echo "local=$LOCAL" >> $GITHUB_OUTPUT
-          echo "upstream$UPSTREAM" >> $GITHUB_OUTPUT
+          echo "upstream=$UPSTREAM" >> $GITHUB_OUTPUT
           if [ "$LOCAL" = "$UPSTREAM" ]; then
             echo "sync_needed=false" >> $GITHUB_OUTPUT
             echo "Already up to date with upstream"
           else
             echo "sync_needed=true" >> $GITHUB_OUTPUT
             echo "Commits to sync:"
-            git log --oneline HEAD...upstream/main
+            git log --oneline HEAD..upstream/main
           fi
 
       - name: Sync main branch
